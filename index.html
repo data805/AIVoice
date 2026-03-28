@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Voice Agent — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div class="modal-overlay" id="day-modal">
+    <div class="modal-box" style="position:relative;">
+      <button class="modal-close" id="close-day-modal">&times;</button>
+      <div class="modal-title" id="modal-date-title">Bookings</div>
+      <div class="modal-sub" id="modal-date-sub"></div>
+      <div id="modal-bookings-body"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="transcript-modal">
+    <div class="modal-box" style="position:relative;max-width:700px;">
+      <button class="modal-close" id="close-transcript-modal">&times;</button>
+      <div class="modal-title">Call Transcript</div>
+      <pre id="transcript-body" style="white-space:pre-wrap;font-size:13px;color:var(--muted);margin-top:16px;max-height:500px;overflow-y:auto;background:var(--bg);padding:16px;border-radius:8px;"></pre>
+    </div>
+  </div>
+
+  <nav id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.12)"/><path d="M8 12c0-2.21 1.79-4 4-4s4 1.79 4 4" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="15" r="2" fill="white"/><path d="M6 18c1.5-1.5 3.5-2.5 6-2.5s4.5 1 6 2.5" stroke="white" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>
+      </div>
+      <div>
+        <div class="brand-text">Voice Agent</div>
+        <div class="brand-sub">RapidX AI</div>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-section">Overview</div>
+      <div class="nav-item active" data-page="dashboard"><span class="icon">&#x1F4CA;</span> Dashboard</div>
+      <div class="nav-item" data-page="calendar"><span class="icon">&#x1F4C5;</span> Calendar</div>
+      <div class="nav-section" style="margin-top:12px;">Configuration</div>
+      <div class="nav-item" data-page="agent"><span class="icon">&#x1F916;</span> Agent Settings</div>
+      <div class="nav-item" data-page="models"><span class="icon">&#x1F399;</span> Models & Voice</div>
+      <div class="nav-item" data-page="credentials"><span class="icon">&#x1F511;</span> API Credentials</div>
+      <div class="nav-section" style="margin-top:12px;">Data</div>
+      <div class="nav-item" data-page="logs"><span class="icon">&#x1F4DE;</span> Call Logs</div>
+      <div class="nav-item" data-page="crm"><span class="icon">&#x1F465;</span> CRM Contacts</div>
+      <div class="nav-section" style="margin-top:12px;">Calling</div>
+      <div class="nav-item" data-page="outbound"><span class="icon">&#x1F4F2;</span> Outbound Calls</div>
+      <div class="nav-item" data-page="languages"><span class="icon">&#x1F310;</span> Language Presets</div>
+    </div>
+    <div class="sidebar-footer">
+      <span class="status-dot pulse"></span>Agent Online
+    </div>
+  </nav>
+
+  <div id="main"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

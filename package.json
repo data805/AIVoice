@@ -2,8 +2,14 @@
   "name": "rapidx-ai-voice-agent",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "echo 'Python project — no JS build needed'",
-    "start": "python3 ui_server.py"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.1",
+    "vite": "^8.0.3"
   }
 }
