@@ -530,7 +530,7 @@ async def entrypoint(ctx: JobContext):
         )
         logger.info("[STT] Using Sarvam Saaras v3")
 
-    # ── Build TTS (#2 24kHz, #10 ElevenLabs) ────────────────────────────
+    # ── Build TTS (#2 24kHz, #10 ElevenLabs, Chatterbox) ────────────────
     if tts_provider == "elevenlabs":
         try:
             from livekit.plugins import elevenlabs
@@ -542,6 +542,28 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[TTS] Using ElevenLabs Turbo v2.5 — voice: {_el_voice_id}")
         except ImportError:
             logger.warning("[TTS] elevenlabs plugin not installed — falling back to Sarvam")
+            agent_tts = sarvam.TTS(
+                target_language_code=tts_language,
+                model="bulbul:v3",
+                speaker=tts_voice,
+                speech_sample_rate=24000,
+            )
+    elif tts_provider == "chatterbox":
+        try:
+            from chatterbox_tts import ChatterboxTTS
+            _cb_server = live_config.get("chatterbox_server_url", os.environ.get("CHATTERBOX_SERVER_URL", "http://localhost:8000"))
+            _cb_voice  = live_config.get("chatterbox_voice", "default")
+            _cb_exag   = float(live_config.get("chatterbox_exaggeration", 0.5))
+            _cb_cfg    = float(live_config.get("chatterbox_cfg_weight", 0.5))
+            agent_tts = ChatterboxTTS(
+                server_url=_cb_server,
+                voice=_cb_voice,
+                exaggeration=_cb_exag,
+                cfg_weight=_cb_cfg,
+            )
+            logger.info(f"[TTS] Using Chatterbox @ {_cb_server} voice={_cb_voice}")
+        except Exception as e:
+            logger.warning(f"[TTS] Chatterbox unavailable ({e}) — falling back to Sarvam")
             agent_tts = sarvam.TTS(
                 target_language_code=tts_language,
                 model="bulbul:v3",
