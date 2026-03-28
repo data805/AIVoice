@@ -11,6 +11,7 @@ logger = logging.getLogger("db")
 _ANALYTICS_COLUMNS = {
     "sentiment", "was_booked", "interrupt_count",
     "estimated_cost_usd", "call_date", "call_hour", "call_day_of_week",
+    "call_direction", "campaign_id",
 }
 _BASE_COLUMNS = {"phone_number", "duration_seconds", "transcript", "summary",
                  "recording_url", "caller_name"}
@@ -62,6 +63,8 @@ def save_call_log(
     call_day_of_week: str | None = None,
     was_booked: bool = False,
     interrupt_count: int = 0,
+    call_direction: str = "inbound",
+    campaign_id: str = "",
 ) -> dict:
     """
     Insert a call log into Supabase.
@@ -98,6 +101,8 @@ def save_call_log(
     if call_date:                   full_data["call_date"]           = call_date
     if call_hour is not None:       full_data["call_hour"]           = call_hour
     if call_day_of_week:            full_data["call_day_of_week"]    = call_day_of_week
+    if call_direction:              full_data["call_direction"]      = call_direction
+    if campaign_id:                 full_data["campaign_id"]         = campaign_id
 
     # Base-only payload (fallback if migration not run)
     base_data: dict = {k: v for k, v in full_data.items() if k not in _ANALYTICS_COLUMNS}

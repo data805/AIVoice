@@ -332,27 +332,77 @@ agent_is_speaking = False
 async def entrypoint(ctx: JobContext):
     global agent_is_speaking
 
-    # ── Connect ───────────────────────────────────────────────────────────
     await ctx.connect()
     logger.info(f"[ROOM] Connected: {ctx.room.name}")
 
-    # ── Extract caller info ───────────────────────────────────────────────
     phone_number = None
     caller_name  = ""
     caller_phone = "unknown"
+    is_outbound  = False
+    campaign_id  = ""
+    custom_first_line = ""
+    custom_instructions = ""
 
-    # Try metadata first (outbound dispatch)
     metadata = ctx.job.metadata or ""
     if metadata:
         try:
             meta = json.loads(metadata)
             phone_number = meta.get("phone_number")
+            is_outbound = meta.get("is_outbound", False)
+            campaign_id = meta.get("campaign_id", "")
+            custom_first_line = meta.get("custom_first_line", "")
+            custom_instructions = meta.get("custom_instructions", "")
         except Exception:
             pass
 
-    # Extract from SIP participants
+    if is_outbound and phone_number and phone_number not in ("demo", "unknown"):
+        logger.info(f"[OUTBOUND] Dialing {phone_number} via SIP...")
+        try:
+            sip_trunk_id = os.getenv("OUTBOUND_TRUNK_ID", "")
+            if not sip_trunk_id:
+                live_cfg = get_live_config()
+                sip_trunk_id = live_cfg.get("sip_trunk_id", "")
+            if not sip_trunk_id:
+                logger.error("[OUTBOUND] No SIP trunk ID configured — cannot place call")
+                return
+
+            sip_domain = os.getenv("VOBIZ_SIP_DOMAIN", "")
+            if not sip_domain:
+                live_cfg = get_live_config()
+                sip_domain = live_cfg.get("vobiz_sip_domain", "")
+
+            clean_number = phone_number.replace("+", "").replace(" ", "")
+            if sip_domain:
+                sip_uri = f"sip:{clean_number}@{sip_domain}"
+            else:
+                sip_uri = f"sip:{clean_number}@sip.livekit.cloud"
+
+            await ctx.api.sip.create_sip_participant(
+                api.CreateSIPParticipantRequest(
+                    sip_trunk_id=sip_trunk_id,
+                    sip_call_to=sip_uri,
+                    room_name=ctx.room.name,
+                    participant_identity=f"sip_{clean_number}",
+                    participant_name=phone_number,
+                    play_dialtone=True,
+                )
+            )
+            logger.info(f"[OUTBOUND] SIP participant created for {phone_number}")
+        except Exception as e:
+            logger.error(f"[OUTBOUND] Failed to dial {phone_number}: {e}")
+            try:
+                sb = db.get_supabase()
+                if sb and campaign_id:
+                    sb.table("outbound_call_results").update({
+                        "status": "failed",
+                        "error_message": str(e)[:500],
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }).eq("campaign_id", campaign_id).eq("phone_number", phone_number).execute()
+            except Exception:
+                pass
+            return
+
     for identity, participant in ctx.room.remote_participants.items():
-        # Name from caller ID (#32)
         if participant.name and participant.name not in ("", "Caller", "Unknown"):
             caller_name = participant.name
             logger.info(f"[CALLER-ID] Name from SIP: {caller_name}")
@@ -366,14 +416,18 @@ async def entrypoint(ctx: JobContext):
                 phone_number = m.group()
 
     caller_phone = phone_number or "unknown"
+    call_direction = "outbound" if is_outbound else "inbound"
 
     # ── Rate limiting (#37) ───────────────────────────────────────────────
     if is_rate_limited(caller_phone):
         logger.warning(f"[RATE-LIMIT] Blocked {caller_phone} — too many calls in 1h")
         return
 
-    # ── Load config ───────────────────────────────────────────────────────
     live_config   = get_live_config(caller_phone)
+    if custom_instructions:
+        live_config["agent_instructions"] = custom_instructions
+    if custom_first_line:
+        live_config["first_line"] = custom_first_line
     delay_setting = live_config.get("stt_min_endpointing_delay", 0.05)
     llm_model     = live_config.get("llm_model", "gpt-4o-mini")
     llm_provider  = live_config.get("llm_provider", "openai")
@@ -594,11 +648,13 @@ async def entrypoint(ctx: JobContext):
             sb = db.get_supabase()
             if sb:
                 sb.table("active_calls").upsert({
-                    "room_id":     ctx.room.name,
-                    "phone":       caller_phone,
-                    "caller_name": caller_name,
-                    "status":      status,
-                    "last_updated": datetime.utcnow().isoformat(),
+                    "room_id":        ctx.room.name,
+                    "phone":          caller_phone,
+                    "caller_name":    caller_name,
+                    "status":         status,
+                    "last_updated":   datetime.utcnow().isoformat(),
+                    "call_direction": call_direction,
+                    "campaign_id":    campaign_id,
                 }).execute()
         except Exception as e:
             logger.debug(f"[ACTIVE-CALL] {e}")
@@ -818,7 +874,6 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"[N8N] Webhook failed: {e}")
 
-        # Save to Supabase
         from db import save_call_log
         save_call_log(
             phone=caller_phone,
@@ -834,7 +889,40 @@ async def entrypoint(ctx: JobContext):
             call_day_of_week=call_dt.strftime("%A"),
             was_booked=bool(agent_tools.booking_intent),
             interrupt_count=interrupt_count,
+            call_direction=call_direction,
+            campaign_id=campaign_id,
         )
+
+        if campaign_id and is_outbound:
+            try:
+                sb = db.get_supabase()
+                if sb:
+                    sb.table("outbound_call_results").update({
+                        "status": "completed",
+                        "duration_seconds": duration,
+                        "was_booked": bool(agent_tools.booking_intent),
+                        "sentiment": sentiment,
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }).eq("campaign_id", campaign_id).eq("phone_number", caller_phone).execute()
+
+                    completed_res = sb.table("outbound_call_results").select("id, was_booked").eq("campaign_id", campaign_id).eq("status", "completed").execute()
+                    completed_rows = completed_res.data or []
+                    booked_count = sum(1 for r in completed_rows if r.get("was_booked"))
+                    total_res = sb.table("outbound_call_results").select("id", count="exact").eq("campaign_id", campaign_id).execute()
+                    total_in_campaign = len(total_res.data) if total_res.data else 0
+
+                    update_payload = {
+                        "calls_completed": len(completed_rows),
+                        "calls_succeeded": len(completed_rows),
+                        "calls_booked": booked_count,
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }
+                    if len(completed_rows) >= total_in_campaign and total_in_campaign > 0:
+                        update_payload["status"] = "completed"
+                    sb.table("outbound_campaigns").update(update_payload).eq("id", campaign_id).execute()
+                    logger.info(f"[CAMPAIGN] Updated {campaign_id}: {len(completed_rows)}/{total_in_campaign} done")
+            except Exception as e:
+                logger.warning(f"[CAMPAIGN] Failed to update results: {e}")
 
     ctx.add_shutdown_callback(unified_shutdown_hook)
 

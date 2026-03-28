@@ -251,28 +251,38 @@ DEMO_PAGE_HTML = """<!DOCTYPE html>
 
 # ── Outbound Calls ────────────────────────────────────────────────────────────
 
+def _get_lk_creds():
+    cfg = read_config()
+    return {
+        "url": cfg.get("livekit_url") or os.environ.get("LIVEKIT_URL", ""),
+        "api_key": cfg.get("livekit_api_key") or os.environ.get("LIVEKIT_API_KEY", ""),
+        "api_secret": cfg.get("livekit_api_secret") or os.environ.get("LIVEKIT_API_SECRET", ""),
+    }
+
 @app.post("/api/call/single")
 async def api_call_single(request: Request):
-    """Dispatch a single outbound call via LiveKit."""
+    import random, json as _json
+    from livekit import api as lkapi
     data = await request.json()
     phone = (data.get("phone") or "").strip()
     if not phone.startswith("+"):
         return {"status": "error", "message": "Phone number must start with + and country code"}
-    config = read_config()
+    custom_first_line = (data.get("first_line") or "").strip()
+    custom_instructions = (data.get("instructions") or "").strip()
+    creds = _get_lk_creds()
     try:
-        import random, json as _json
-        from livekit import api as lkapi
-        lk = lkapi.LiveKitAPI(
-            url=config.get("livekit_url") or os.environ.get("LIVEKIT_URL",""),
-            api_key=config.get("livekit_api_key") or os.environ.get("LIVEKIT_API_KEY",""),
-            api_secret=config.get("livekit_api_secret") or os.environ.get("LIVEKIT_API_SECRET",""),
-        )
-        room_name = f"call-{phone.replace('+','')}-{random.randint(1000,9999)}"
+        lk = lkapi.LiveKitAPI(url=creds["url"], api_key=creds["api_key"], api_secret=creds["api_secret"])
+        room_name = f"outbound-{phone.replace('+','')}-{random.randint(1000,9999)}"
+        meta = {"phone_number": phone, "is_outbound": True}
+        if custom_first_line:
+            meta["custom_first_line"] = custom_first_line
+        if custom_instructions:
+            meta["custom_instructions"] = custom_instructions
         dispatch = await lk.agent_dispatch.create_dispatch(
             lkapi.CreateAgentDispatchRequest(
                 agent_name="outbound-caller",
                 room=room_name,
-                metadata=_json.dumps({"phone_number": phone}),
+                metadata=_json.dumps(meta),
             )
         )
         await lk.aclose()
@@ -284,28 +294,31 @@ async def api_call_single(request: Request):
 
 @app.post("/api/call/bulk")
 async def api_call_bulk(request: Request):
-    """Dispatch outbound calls to multiple numbers (one per line)."""
     import random, json as _json
     from livekit import api as lkapi
     data = await request.json()
     numbers = [n.strip() for n in (data.get("numbers") or "").splitlines() if n.strip()]
+    custom_first_line = (data.get("first_line") or "").strip()
+    custom_instructions = (data.get("instructions") or "").strip()
     results = []
-    cfg = read_config()
-    lk_url    = cfg.get("livekit_url")    or os.environ.get("LIVEKIT_URL","")
-    lk_key    = cfg.get("livekit_api_key")    or os.environ.get("LIVEKIT_API_KEY","")
-    lk_secret = cfg.get("livekit_api_secret") or os.environ.get("LIVEKIT_API_SECRET","")
+    creds = _get_lk_creds()
     for phone in numbers:
         if not phone.startswith("+"):
             results.append({"phone": phone, "status": "error", "message": "Must start with +"})
             continue
         try:
-            lk = lkapi.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret)
-            room_name = f"call-{phone.replace('+','')}-{random.randint(1000,9999)}"
+            lk = lkapi.LiveKitAPI(url=creds["url"], api_key=creds["api_key"], api_secret=creds["api_secret"])
+            room_name = f"outbound-{phone.replace('+','')}-{random.randint(1000,9999)}"
+            meta = {"phone_number": phone, "is_outbound": True}
+            if custom_first_line:
+                meta["custom_first_line"] = custom_first_line
+            if custom_instructions:
+                meta["custom_instructions"] = custom_instructions
             dispatch = await lk.agent_dispatch.create_dispatch(
                 lkapi.CreateAgentDispatchRequest(
                     agent_name="outbound-caller",
                     room=room_name,
-                    metadata=_json.dumps({"phone_number": phone}),
+                    metadata=_json.dumps(meta),
                 )
             )
             await lk.aclose()
@@ -314,6 +327,143 @@ async def api_call_bulk(request: Request):
         except Exception as e:
             results.append({"phone": phone, "status": "error", "message": str(e)})
     return {"results": results, "total": len(results)}
+
+# ── Campaign Management ──────────────────────────────────────────────────────
+
+@app.post("/api/campaigns")
+async def api_create_campaign(request: Request):
+    import json as _json, random
+    from livekit import api as lkapi
+    data = await request.json()
+    name = (data.get("name") or "Untitled Campaign").strip()
+    numbers_raw = data.get("numbers") or ""
+    numbers = [n.strip() for n in numbers_raw.splitlines() if n.strip() and n.strip().startswith("+")]
+    custom_first_line = (data.get("first_line") or "").strip()
+    custom_instructions = (data.get("instructions") or "").strip()
+    auto_start = data.get("auto_start", True)
+
+    if not numbers:
+        return {"status": "error", "message": "No valid phone numbers provided"}
+
+    config = read_config()
+    os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
+    os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
+
+    try:
+        from supabase import create_client
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+        campaign_res = sb.table("outbound_campaigns").insert({
+            "name": name,
+            "status": "active" if auto_start else "draft",
+            "phone_numbers": numbers,
+            "total_numbers": len(numbers),
+            "custom_first_line": custom_first_line,
+            "custom_instructions": custom_instructions,
+        }).execute()
+        campaign = campaign_res.data[0]
+        campaign_id = campaign["id"]
+
+        call_results_data = [
+            {"campaign_id": campaign_id, "phone_number": phone, "status": "pending"}
+            for phone in numbers
+        ]
+        sb.table("outbound_call_results").insert(call_results_data).execute()
+
+        dispatch_results = []
+        if auto_start:
+            creds = _get_lk_creds()
+            for phone in numbers:
+                try:
+                    lk = lkapi.LiveKitAPI(url=creds["url"], api_key=creds["api_key"], api_secret=creds["api_secret"])
+                    room_name = f"campaign-{phone.replace('+','')}-{random.randint(1000,9999)}"
+                    meta = {
+                        "phone_number": phone,
+                        "is_outbound": True,
+                        "campaign_id": campaign_id,
+                    }
+                    if custom_first_line:
+                        meta["custom_first_line"] = custom_first_line
+                    if custom_instructions:
+                        meta["custom_instructions"] = custom_instructions
+                    dispatch = await lk.agent_dispatch.create_dispatch(
+                        lkapi.CreateAgentDispatchRequest(
+                            agent_name="outbound-caller",
+                            room=room_name,
+                            metadata=_json.dumps(meta),
+                        )
+                    )
+                    await lk.aclose()
+                    sb.table("outbound_call_results").update({
+                        "status": "dispatched",
+                        "dispatch_id": dispatch.id,
+                        "room_name": room_name,
+                    }).eq("campaign_id", campaign_id).eq("phone_number", phone).execute()
+                    dispatch_results.append({"phone": phone, "status": "dispatched"})
+                except Exception as e:
+                    sb.table("outbound_call_results").update({
+                        "status": "failed",
+                        "error_message": str(e)[:500],
+                    }).eq("campaign_id", campaign_id).eq("phone_number", phone).execute()
+                    dispatch_results.append({"phone": phone, "status": "failed", "error": str(e)})
+
+        return {
+            "status": "ok",
+            "campaign_id": campaign_id,
+            "name": name,
+            "total_numbers": len(numbers),
+            "dispatched": len([r for r in dispatch_results if r["status"] == "dispatched"]),
+            "results": dispatch_results,
+        }
+    except Exception as e:
+        logger.error(f"Campaign creation error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/campaigns")
+async def api_list_campaigns():
+    config = read_config()
+    os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
+    os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
+    try:
+        from supabase import create_client
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        res = sb.table("outbound_campaigns").select("*").order("created_at", desc=True).limit(50).execute()
+        return res.data or []
+    except Exception as e:
+        logger.error(f"Error fetching campaigns: {e}")
+        return []
+
+@app.get("/api/campaigns/{campaign_id}")
+async def api_get_campaign(campaign_id: str):
+    config = read_config()
+    os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
+    os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
+    try:
+        from supabase import create_client
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        campaign = sb.table("outbound_campaigns").select("*").eq("id", campaign_id).maybeSingle().execute()
+        results = sb.table("outbound_call_results").select("*").eq("campaign_id", campaign_id).order("created_at").execute()
+        return {
+            "campaign": campaign.data,
+            "results": results.data or [],
+        }
+    except Exception as e:
+        logger.error(f"Error fetching campaign {campaign_id}: {e}")
+        return {"campaign": None, "results": []}
+
+@app.get("/api/active-calls")
+async def api_active_calls():
+    config = read_config()
+    os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
+    os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
+    try:
+        from supabase import create_client
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        res = sb.table("active_calls").select("*").eq("status", "active").order("started_at", desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        logger.error(f"Error fetching active calls: {e}")
+        return []
 
 # ── Demo Link ─────────────────────────────────────────────────────────────────
 
@@ -629,7 +779,7 @@ async def get_dashboard():
     <div class="nav-item" onclick="goTo('logs', this); loadLogs();"><span class="icon">📞</span> Call Logs</div>
     <div class="nav-item" onclick="goTo('crm', this); loadCRM();"><span class="icon">👥</span> CRM Contacts</div>
     <div class="nav-section" style="margin-top:12px;">Calling</div>
-    <div class="nav-item" onclick="goTo('outbound', this)"><span class="icon">📲</span> Outbound Calls</div>
+    <div class="nav-item" onclick="goTo('outbound', this); loadCampaigns();"><span class="icon">📲</span> Outbound Calls</div>
     <div class="nav-item" onclick="goTo('languages', this); initLanguagePage();"><span class="icon">🌐</span> Language Presets</div>
     <div class="nav-item" onclick="goTo('demo', this); initDemo();"><span class="icon">✨</span> Demo Link</div>
   </div>
@@ -842,9 +992,10 @@ async def get_dashboard():
   <!-- ── Outbound Calls Page ── -->
   <div id="page-outbound" class="page">
     <div class="page-header">
-      <div class="page-title">📲 Outbound Calls</div>
-      <div class="page-sub">Dispatch the AI agent to call any number instantly</div>
+      <div class="page-title">Outbound Calls</div>
+      <div class="page-sub">Dispatch the AI agent to call any number — single, bulk, or as a tracked campaign</div>
     </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
       <div class="section-card">
         <div class="section-title">Single Call</div>
@@ -853,23 +1004,82 @@ async def get_dashboard():
           <input type="text" id="call-single-num" placeholder="+91XXXXXXXXXX" style="font-family:monospace;">
           <div class="hint">Must start with + and country code e.g. +91</div>
         </div>
-        <button class="btn btn-primary" onclick="makeSingleCall()" style="width:100%;">📞 Call Now</button>
+        <div class="form-group">
+          <label>Custom Opening Line (optional)</label>
+          <input type="text" id="call-single-first-line" placeholder="Leave blank to use default greeting">
+        </div>
+        <button class="btn btn-primary" onclick="makeSingleCall()" style="width:100%;">Call Now</button>
         <div id="single-call-status" style="margin-top:12px;font-size:13px;"></div>
       </div>
       <div class="section-card">
-        <div class="section-title">Bulk Call</div>
+        <div class="section-title">Bulk Call (Quick)</div>
         <div class="form-group">
           <label>Phone Numbers (one per line)</label>
-          <textarea id="call-bulk-nums" rows="6" placeholder="+91XXXXXXXXXX&#10;+91YYYYYYYYYY&#10;+44ZZZZZZZZZ"></textarea>
-          <div class="hint">Each line is a separate call dispatched simultaneously</div>
+          <textarea id="call-bulk-nums" rows="5" placeholder="+91XXXXXXXXXX&#10;+91YYYYYYYYYY&#10;+44ZZZZZZZZZ"></textarea>
+          <div class="hint">Each line dispatched simultaneously — no tracking</div>
         </div>
-        <button class="btn btn-primary" onclick="makeBulkCall()" style="width:100%;">🚀 Call All Numbers</button>
+        <button class="btn btn-primary" onclick="makeBulkCall()" style="width:100%;">Call All Numbers</button>
         <div id="bulk-call-status" style="margin-top:12px;font-size:13px;"></div>
       </div>
     </div>
-    <div class="section-card" id="call-results-card" style="display:none;">
+
+    <div class="section-card" style="margin-top:20px;">
+      <div class="section-title">Create Campaign (Tracked)</div>
+      <div class="form-group">
+        <label>Campaign Name</label>
+        <input type="text" id="campaign-name" placeholder="e.g. March Follow-Up Calls">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Phone Numbers (one per line)</label>
+          <textarea id="campaign-nums" rows="5" placeholder="+91XXXXXXXXXX&#10;+91YYYYYYYYYY"></textarea>
+        </div>
+        <div>
+          <div class="form-group">
+            <label>Custom Opening Line (optional)</label>
+            <input type="text" id="campaign-first-line" placeholder="Leave blank for default">
+          </div>
+          <div class="form-group">
+            <label>Custom Instructions (optional)</label>
+            <textarea id="campaign-instructions" rows="3" placeholder="Override the default agent prompt for this campaign"></textarea>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="createCampaign()">Launch Campaign</button>
+      <div id="campaign-create-status" style="margin-top:12px;font-size:13px;"></div>
+    </div>
+
+    <div class="section-card" style="margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div class="section-title" style="margin:0;border:none;padding:0;">Campaign History</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadCampaigns()">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Status</th><th>Total</th><th>Completed</th><th>Booked</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="campaigns-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted);">No campaigns yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-card" id="call-results-card" style="display:none;margin-top:20px;">
       <div class="section-title">Call Results</div>
       <div id="call-results-body"></div>
+    </div>
+
+    <div class="section-card" id="campaign-detail-card" style="display:none;margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div class="section-title" style="margin:0;border:none;padding:0;" id="campaign-detail-title">Campaign Detail</div>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('campaign-detail-card').style.display='none'">Close</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Phone</th><th>Status</th><th>Duration</th><th>Booked</th><th>Sentiment</th></tr></thead>
+          <tbody id="campaign-detail-tbody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1277,27 +1487,30 @@ async function selectLangPreset(id) {{
   }} catch(e) {{ alert('Failed to save: ' + e); }}
 }}
 
-// ── Outbound Calls ─────────────────────────────────────────────────────────── 
+// ── Outbound Calls ───────────────────────────────────────────────────────────
 async function makeSingleCall() {{
   const phone = document.getElementById('call-single-num').value.trim();
   if (!phone) return;
+  const firstLine = (document.getElementById('call-single-first-line') || {{}}).value || '';
   const el = document.getElementById('single-call-status');
-  el.textContent = '⏳ Dispatching...';
+  el.textContent = 'Dispatching...';
   el.style.color = 'var(--muted)';
   try {{
+    const payload = {{phone}};
+    if (firstLine.trim()) payload.first_line = firstLine.trim();
     const res = await fetch('/api/call/single', {{
       method:'POST', headers:{{'Content-Type':'application/json'}},
-      body: JSON.stringify({{phone}})
+      body: JSON.stringify(payload)
     }}).then(r=>r.json());
     if (res.status === 'ok') {{
-      el.innerHTML = `✅ Call dispatched! Dispatch ID: <code>${{res.dispatch_id}}</code>`;
+      el.innerHTML = `Call dispatched! ID: <code>${{res.dispatch_id}}</code>`;
       el.style.color = 'var(--green)';
     }} else {{
-      el.textContent = '❌ ' + res.message;
+      el.textContent = 'Failed: ' + res.message;
       el.style.color = 'var(--red)';
     }}
   }} catch(e) {{
-    el.textContent = '❌ Error: ' + e;
+    el.textContent = 'Error: ' + e;
     el.style.color = 'var(--red)';
   }}
 }}
@@ -1306,7 +1519,7 @@ async function makeBulkCall() {{
   const nums = document.getElementById('call-bulk-nums').value.trim();
   if (!nums) return;
   const el = document.getElementById('bulk-call-status');
-  el.textContent = '⏳ Dispatching all numbers...';
+  el.textContent = 'Dispatching all numbers...';
   try {{
     const res = await fetch('/api/call/bulk', {{
       method:'POST', headers:{{'Content-Type':'application/json'}},
@@ -1317,13 +1530,117 @@ async function makeBulkCall() {{
     document.getElementById('call-results-body').innerHTML = results.map(r => `
       <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
         <span style="font-family:monospace;">${{r.phone}}</span>
-        <span class="badge ${{r.status==='ok'?'badge-green':'badge-gray'}}">${{r.status==='ok'?'✅ Sent':'❌ '+r.message}}</span>
+        <span class="badge ${{r.status==='ok'?'badge-green':'badge-gray'}}">${{r.status==='ok'?'Dispatched':'Failed: '+r.message}}</span>
       </div>`).join('');
-    el.textContent = `✅ ${{results.filter(r=>r.status==='ok').length}}/${{results.length}} calls dispatched`;
+    el.textContent = `${{results.filter(r=>r.status==='ok').length}}/${{results.length}} calls dispatched`;
     el.style.color = 'var(--green)';
   }} catch(e) {{
-    el.textContent = '❌ Error: ' + e;
+    el.textContent = 'Error: ' + e;
     el.style.color = 'var(--red)';
+  }}
+}}
+
+// ── Campaigns ────────────────────────────────────────────────────────────────
+async function createCampaign() {{
+  const name = (document.getElementById('campaign-name').value || '').trim();
+  const nums = (document.getElementById('campaign-nums').value || '').trim();
+  const firstLine = (document.getElementById('campaign-first-line').value || '').trim();
+  const instructions = (document.getElementById('campaign-instructions').value || '').trim();
+  const el = document.getElementById('campaign-create-status');
+  if (!nums) {{ el.textContent = 'Enter at least one phone number'; el.style.color = 'var(--red)'; return; }}
+  el.textContent = 'Launching campaign...';
+  el.style.color = 'var(--muted)';
+  try {{
+    const payload = {{ name: name || 'Untitled Campaign', numbers: nums, auto_start: true }};
+    if (firstLine) payload.first_line = firstLine;
+    if (instructions) payload.instructions = instructions;
+    const res = await fetch('/api/campaigns', {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify(payload)
+    }}).then(r=>r.json());
+    if (res.status === 'ok') {{
+      el.innerHTML = `Campaign launched: ${{res.dispatched}}/${{res.total_numbers}} calls dispatched`;
+      el.style.color = 'var(--green)';
+      document.getElementById('campaign-name').value = '';
+      document.getElementById('campaign-nums').value = '';
+      document.getElementById('campaign-first-line').value = '';
+      document.getElementById('campaign-instructions').value = '';
+      loadCampaigns();
+    }} else {{
+      el.textContent = 'Failed: ' + res.message;
+      el.style.color = 'var(--red)';
+    }}
+  }} catch(e) {{
+    el.textContent = 'Error: ' + e;
+    el.style.color = 'var(--red)';
+  }}
+}}
+
+async function loadCampaigns() {{
+  const tbody = document.getElementById('campaigns-tbody');
+  if (!tbody) return;
+  try {{
+    const campaigns = await fetch('/api/campaigns').then(r=>r.json());
+    if (!campaigns || !campaigns.length) {{
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted);">No campaigns yet. Create one above.</td></tr>';
+      return;
+    }}
+    tbody.innerHTML = campaigns.map(c => {{
+      const statusBadge = {{
+        draft:     '<span class="badge badge-gray">Draft</span>',
+        active:    '<span class="badge badge-yellow">Active</span>',
+        paused:    '<span class="badge badge-gray">Paused</span>',
+        completed: '<span class="badge badge-green">Completed</span>',
+      }}[c.status] || '<span class="badge badge-gray">' + c.status + '</span>';
+      return `<tr>
+        <td style="font-weight:600;">${{c.name || 'Untitled'}}</td>
+        <td>${{statusBadge}}</td>
+        <td>${{c.total_numbers || 0}}</td>
+        <td>${{c.calls_completed || 0}}</td>
+        <td>${{c.calls_booked || 0}}</td>
+        <td style="color:var(--muted);font-size:12px;">${{c.created_at ? new Date(c.created_at).toLocaleString() : ''}}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewCampaign('${{c.id}}')">View</button></td>
+      </tr>`;
+    }}).join('');
+  }} catch(e) {{
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--red);">Error loading campaigns</td></tr>';
+  }}
+}}
+
+async function viewCampaign(id) {{
+  const card = document.getElementById('campaign-detail-card');
+  const tbody = document.getElementById('campaign-detail-tbody');
+  card.style.display = 'block';
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted);">Loading...</td></tr>';
+  try {{
+    const data = await fetch('/api/campaigns/' + id).then(r=>r.json());
+    if (data.campaign) {{
+      document.getElementById('campaign-detail-title').textContent = data.campaign.name || 'Campaign Detail';
+    }}
+    const results = data.results || [];
+    if (!results.length) {{
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted);">No call results yet</td></tr>';
+      return;
+    }}
+    tbody.innerHTML = results.map(r => {{
+      const sBadge = {{
+        pending:    '<span class="badge badge-gray">Pending</span>',
+        dispatched: '<span class="badge badge-yellow">Dispatched</span>',
+        connected:  '<span class="badge badge-yellow">Connected</span>',
+        completed:  '<span class="badge badge-green">Completed</span>',
+        failed:     '<span class="badge" style="background:rgba(239,68,68,0.12);color:var(--red);">Failed</span>',
+      }}[r.status] || '<span class="badge badge-gray">' + r.status + '</span>';
+      return `<tr>
+        <td style="font-family:monospace;">${{r.phone_number}}</td>
+        <td>${{sBadge}}</td>
+        <td>${{r.duration_seconds || '—'}}s</td>
+        <td>${{r.was_booked ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-gray">No</span>'}}</td>
+        <td style="color:var(--muted);">${{r.sentiment || '—'}}</td>
+      </tr>`;
+    }}).join('');
+    card.scrollIntoView({{ behavior: 'smooth' }});
+  }} catch(e) {{
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--red);">Error loading campaign</td></tr>';
   }}
 }}
 
