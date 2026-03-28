@@ -1,4 +1,4 @@
-import { fetchStats, fetchCallLogs, getTranscript } from '../api.js';
+import { fetchInboundStats, fetchCallLogs, getTranscript } from '../api.js';
 
 function badgeFor(summary) {
   if (!summary) return '<span class="badge badge-gray">Ended</span>';
@@ -15,9 +15,15 @@ export function renderDashboard() {
     </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Total Calls</div><div class="stat-value" id="stat-calls">&mdash;</div><div class="stat-sub">All time</div></div>
-      <div class="stat-card"><div class="stat-label">Bookings Made</div><div class="stat-value" id="stat-bookings">&mdash;</div><div class="stat-sub">Confirmed appointments</div></div>
+      <div class="stat-card"><div class="stat-label">Inbound</div><div class="stat-value" id="stat-inbound">&mdash;</div><div class="stat-sub">Received calls</div></div>
+      <div class="stat-card"><div class="stat-label">Outbound</div><div class="stat-value" id="stat-outbound">&mdash;</div><div class="stat-sub">Dialed calls</div></div>
+      <div class="stat-card"><div class="stat-label">Bookings</div><div class="stat-value" id="stat-bookings">&mdash;</div><div class="stat-sub">Confirmed appointments</div></div>
+    </div>
+    <div class="stat-grid" style="margin-top:-12px;">
       <div class="stat-card"><div class="stat-label">Avg Duration</div><div class="stat-value" id="stat-duration">&mdash;</div><div class="stat-sub">Seconds per call</div></div>
       <div class="stat-card"><div class="stat-label">Booking Rate</div><div class="stat-value" id="stat-rate">&mdash;</div><div class="stat-sub">Calls that converted</div></div>
+      <div class="stat-card"><div class="stat-label">Inbound Avg</div><div class="stat-value" id="stat-in-avg">&mdash;</div><div class="stat-sub">Avg inbound duration</div></div>
+      <div class="stat-card"><div class="stat-label">Outbound Avg</div><div class="stat-value" id="stat-out-avg">&mdash;</div><div class="stat-sub">Avg outbound duration</div></div>
     </div>
     <div class="section-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -36,11 +42,15 @@ export function renderDashboard() {
 export async function initDashboard() {
   const load = async () => {
     try {
-      const [stats, logs] = await Promise.all([fetchStats(), fetchCallLogs()]);
-      document.getElementById('stat-calls').textContent = stats.total_calls ?? '—';
-      document.getElementById('stat-bookings').textContent = stats.total_bookings ?? '—';
-      document.getElementById('stat-duration').textContent = stats.avg_duration ? stats.avg_duration + 's' : '—';
-      document.getElementById('stat-rate').textContent = stats.booking_rate ? stats.booking_rate + '%' : '—';
+      const [stats, logs] = await Promise.all([fetchInboundStats(), fetchCallLogs()]);
+      document.getElementById('stat-calls').textContent = stats.total ?? '--';
+      document.getElementById('stat-inbound').textContent = stats.inboundCount ?? '--';
+      document.getElementById('stat-outbound').textContent = stats.outboundCount ?? '--';
+      document.getElementById('stat-bookings').textContent = stats.totalBookings ?? '--';
+      document.getElementById('stat-duration').textContent = stats.avgTotal ? stats.avgTotal + 's' : '--';
+      document.getElementById('stat-rate').textContent = stats.totalRate ? stats.totalRate + '%' : '--';
+      document.getElementById('stat-in-avg').textContent = stats.avgInbound ? stats.avgInbound + 's' : '--';
+      document.getElementById('stat-out-avg').textContent = stats.avgOutbound ? stats.avgOutbound + 's' : '--';
       const tbody = document.getElementById('dash-table-body');
       if (!logs.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);">No calls yet.</td></tr>';

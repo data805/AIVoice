@@ -128,6 +128,62 @@ export async function fetchActiveCalls() {
   return data || [];
 }
 
+export async function fetchInboundCalls(limit = 50) {
+  const { data, error } = await supabase
+    .from('call_logs')
+    .select('*')
+    .eq('call_direction', 'inbound')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchInboundStats() {
+  const { data, error } = await supabase
+    .from('call_logs')
+    .select('duration_seconds, summary, call_direction');
+  if (error) throw error;
+  const rows = data || [];
+  const inbound = rows.filter(r => r.call_direction === 'inbound' || !r.call_direction);
+  const outbound = rows.filter(r => r.call_direction === 'outbound');
+  const total = rows.length;
+  const inboundCount = inbound.length;
+  const outboundCount = outbound.length;
+
+  const inboundBookings = inbound.filter(r => (r.summary || '').includes('Confirmed')).length;
+  const inboundDurations = inbound.filter(r => r.duration_seconds).map(r => r.duration_seconds);
+  const avgInbound = inboundDurations.length ? Math.round(inboundDurations.reduce((a, b) => a + b, 0) / inboundDurations.length) : 0;
+  const inboundRate = inboundCount ? Math.round((inboundBookings / inboundCount) * 100) : 0;
+
+  const outboundBookings = outbound.filter(r => (r.summary || '').includes('Confirmed')).length;
+  const outboundDurations = outbound.filter(r => r.duration_seconds).map(r => r.duration_seconds);
+  const avgOutbound = outboundDurations.length ? Math.round(outboundDurations.reduce((a, b) => a + b, 0) / outboundDurations.length) : 0;
+
+  const totalBookings = inboundBookings + outboundBookings;
+  const allDurations = rows.filter(r => r.duration_seconds).map(r => r.duration_seconds);
+  const avgTotal = allDurations.length ? Math.round(allDurations.reduce((a, b) => a + b, 0) / allDurations.length) : 0;
+  const totalRate = total ? Math.round((totalBookings / total) * 100) : 0;
+
+  return {
+    total, inboundCount, outboundCount,
+    inboundBookings, outboundBookings, totalBookings,
+    avgInbound, avgOutbound, avgTotal,
+    inboundRate, totalRate,
+  };
+}
+
+export async function fetchActiveInboundCalls() {
+  const { data, error } = await supabase
+    .from('active_calls')
+    .select('*')
+    .eq('status', 'active')
+    .eq('call_direction', 'inbound')
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
 export async function getTranscript(logId) {
   const { data, error } = await supabase
     .from('call_logs')

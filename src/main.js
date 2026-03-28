@@ -3,6 +3,7 @@ import { renderDashboard, initDashboard } from './pages/dashboard.js';
 import { renderCalendar, initCalendar } from './pages/calendar.js';
 import { renderLogs, initLogs } from './pages/logs.js';
 import { renderCRM, initCRM } from './pages/crm.js';
+import { renderInbound, initInbound } from './pages/inbound.js';
 import { renderOutbound, initOutbound } from './pages/outbound.js';
 import { renderLanguages, initLanguages } from './pages/languages.js';
 import {
@@ -22,6 +23,7 @@ const pageRenderers = {
   credentials: () => renderCredentials(config),
   logs:        () => renderLogs(),
   crm:         () => renderCRM(),
+  inbound:     () => renderInbound(),
   outbound:    () => renderOutbound(),
   languages:   () => renderLanguages(),
 };
@@ -34,6 +36,7 @@ const pageInitializers = {
   credentials: initCredentials,
   logs:        initLogs,
   crm:         initCRM,
+  inbound:     initInbound,
   outbound:    initOutbound,
   languages:   initLanguages,
 };
