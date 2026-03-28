@@ -10,6 +10,7 @@ import {
   renderAgentSettings, renderModels, renderCredentials,
   initAgentSettings, initModels, initCredentials,
 } from './pages/settings.js';
+import { renderLiveKitAgent, initLiveKitAgent } from './pages/livekit-agent.js';
 
 const mainEl = document.getElementById('main');
 let currentPage = 'dashboard';
@@ -26,6 +27,7 @@ const pageRenderers = {
   inbound:     () => renderInbound(),
   outbound:    () => renderOutbound(),
   languages:   () => renderLanguages(),
+  'livekit-agent': () => renderLiveKitAgent(),
 };
 
 const pageInitializers = {
@@ -39,6 +41,7 @@ const pageInitializers = {
   inbound:     initInbound,
   outbound:    initOutbound,
   languages:   initLanguages,
+  'livekit-agent': initLiveKitAgent,
 };
 
 async function navigateTo(pageId) {

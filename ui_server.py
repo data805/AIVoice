@@ -64,6 +64,27 @@ async def api_post_config(request: Request):
     logger.info("Configuration updated via UI.")
     return {"status": "success"}
 
+@app.get("/api/health")
+async def api_health():
+    config = read_config()
+    checks = {
+        "livekit_url": bool(config.get("livekit_url")),
+        "livekit_api_key": bool(config.get("livekit_api_key")),
+        "livekit_api_secret": bool(config.get("livekit_api_secret")),
+        "openai_api_key": bool(config.get("openai_api_key")),
+        "sarvam_api_key": bool(config.get("sarvam_api_key")),
+        "sip_trunk_id": bool(config.get("sip_trunk_id")),
+        "supabase_url": bool(config.get("supabase_url")),
+        "supabase_key": bool(config.get("supabase_key")),
+    }
+    required = ["livekit_url", "livekit_api_key", "livekit_api_secret"]
+    all_required = all(checks.get(k) for k in required)
+    return {
+        "status": "ready" if all_required else "missing_credentials",
+        "checks": checks,
+        "livekit_project": (config.get("livekit_url") or "").replace("wss://", "").replace(".livekit.cloud", ""),
+    }
+
 @app.get("/api/logs")
 async def api_get_logs():
     config = read_config()
