@@ -202,9 +202,23 @@ export function renderCredentials(config) {
         <div class="section-title">LiveKit</div>
         <div class="form-row">
           <div class="form-group"><label>LiveKit URL</label><input type="text" id="livekit_url" value="${v('livekit_url')}"></div>
-          <div class="form-group"><label>SIP Trunk ID</label><input type="text" id="sip_trunk_id" value="${v('sip_trunk_id')}"></div>
           <div class="form-group"><label>API Key</label><input type="password" id="livekit_api_key" value="${v('livekit_api_key')}"></div>
           <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret" value="${v('livekit_api_secret')}"></div>
+        </div>
+        <div style="margin-top:4px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em;">SIP Trunks</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Inbound SIP Trunk ID</label>
+              <input type="text" id="sip_trunk_id_inbound" value="${v('sip_trunk_id_inbound') || v('sip_trunk_id')}" placeholder="ST_xxxxxxxx">
+              <div class="hint">LiveKit SIP trunk that receives incoming calls to your phone number.</div>
+            </div>
+            <div class="form-group">
+              <label>Outbound SIP Trunk ID</label>
+              <input type="text" id="sip_trunk_id_outbound" value="${v('sip_trunk_id_outbound')}" placeholder="ST_xxxxxxxx">
+              <div class="hint">LiveKit SIP trunk used to place outbound calls. Can be the same as inbound or a separate trunk.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -312,8 +326,9 @@ export function initCredentials() {
     const get = (id) => document.getElementById(id)?.value || '';
     const payload = {
       phone_provider: get('phone_provider') || 'livekit',
-      livekit_url: get('livekit_url'), sip_trunk_id: get('sip_trunk_id'),
+      livekit_url: get('livekit_url'),
       livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
+      sip_trunk_id_inbound: get('sip_trunk_id_inbound'), sip_trunk_id_outbound: get('sip_trunk_id_outbound'),
       twilio_account_sid: get('twilio_account_sid'),
       twilio_auth_token: get('twilio_auth_token'),
       twilio_phone_number: get('twilio_phone_number'),
