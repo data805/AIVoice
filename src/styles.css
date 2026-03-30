@@ -260,6 +260,17 @@ textarea { font-family: 'JetBrains Mono', 'Fira Code', monospace; resize: vertic
   font-size: 13px; color: var(--yellow);
 }
 
+/* ElevenLabs voice presets */
+.el-voice-presets { margin-top: 16px; }
+.el-preset-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.el-preset-btn {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  cursor: pointer; transition: all 0.15s;
+}
+.el-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.el-preset-btn.active { border-color: var(--accent); background: var(--accent-glow); color: var(--accent); }
+
 /* Responsive */
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }

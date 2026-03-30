@@ -440,7 +440,7 @@ async def entrypoint(ctx: JobContext):
 
     # Override OS env vars from UI config
     for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
-                "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY"]:
+                "ELEVENLABS_API_KEY","SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY"]:
         val = live_config.get(key.lower(), "")
         if val:
             os.environ[key] = val
@@ -535,11 +535,13 @@ async def entrypoint(ctx: JobContext):
         try:
             from livekit.plugins import elevenlabs
             _el_voice_id = live_config.get("elevenlabs_voice_id", "21m00Tcm4TlvDq8ikWAM")
-            agent_tts = elevenlabs.TTS(
-                model="eleven_turbo_v2_5",
-                voice_id=_el_voice_id,
-            )
-            logger.info(f"[TTS] Using ElevenLabs Turbo v2.5 — voice: {_el_voice_id}")
+            _el_model    = live_config.get("elevenlabs_model", "eleven_turbo_v2_5")
+            _el_api_key  = live_config.get("elevenlabs_api_key", "") or os.environ.get("ELEVENLABS_API_KEY", "")
+            _el_kwargs = dict(model=_el_model, voice_id=_el_voice_id)
+            if _el_api_key:
+                _el_kwargs["api_key"] = _el_api_key
+            agent_tts = elevenlabs.TTS(**_el_kwargs)
+            logger.info(f"[TTS] Using ElevenLabs {_el_model} — voice: {_el_voice_id}")
         except ImportError:
             logger.warning("[TTS] elevenlabs plugin not installed — falling back to Sarvam")
             agent_tts = sarvam.TTS(

@@ -63,15 +63,15 @@ export function renderModels(config) {
           <label>TTS Engine</label>
           <select id="tts_provider" onchange="window._onTTSProviderChange(this.value)">
             <option value="sarvam" ${sel('tts_provider', 'sarvam')}>Sarvam bulbul:v3 — Indian Languages</option>
+            <option value="elevenlabs" ${sel('tts_provider', 'elevenlabs')}>ElevenLabs — Premium Quality</option>
             <option value="chatterbox" ${sel('tts_provider', 'chatterbox')}>Chatterbox — Self-hosted Open Source</option>
-            <option value="elevenlabs" ${sel('tts_provider', 'elevenlabs')}>ElevenLabs — Premium English</option>
           </select>
-          <div class="hint">Chatterbox requires a self-hosted GPU server. Sarvam recommended for Indian languages.</div>
+          <div class="hint">ElevenLabs recommended for English. Sarvam for Indian languages. Chatterbox requires a self-hosted GPU server.</div>
         </div>
       </div>
     </div>
 
-    <div id="sarvam-voice-panel" style="${(config.tts_provider || 'sarvam') === 'chatterbox' ? 'display:none' : ''}">
+    <div id="sarvam-voice-panel" style="${['elevenlabs','chatterbox'].includes(config.tts_provider) ? 'display:none' : ''}">
       <div class="section-card">
         <div class="section-title">Sarvam Voice</div>
         <div class="form-row" style="max-width:720px;">
@@ -108,7 +108,43 @@ export function renderModels(config) {
       </div>
     </div>
 
-    <div id="chatterbox-panel" style="${(config.tts_provider || 'sarvam') === 'chatterbox' ? '' : 'display:none'}">
+    <div id="elevenlabs-panel" style="${config.tts_provider === 'elevenlabs' ? '' : 'display:none'}">
+      <div class="section-card">
+        <div class="section-title">ElevenLabs Voice</div>
+        <div class="form-row" style="max-width:720px;">
+          <div class="form-group">
+            <label>Model</label>
+            <select id="elevenlabs_model">
+              <option value="eleven_turbo_v2_5" ${sel('elevenlabs_model', 'eleven_turbo_v2_5')}>Turbo v2.5 — Fastest, low-latency</option>
+              <option value="eleven_turbo_v2" ${sel('elevenlabs_model', 'eleven_turbo_v2')}>Turbo v2 — Fast</option>
+              <option value="eleven_multilingual_v2" ${sel('elevenlabs_model', 'eleven_multilingual_v2')}>Multilingual v2 — Best quality</option>
+              <option value="eleven_flash_v2_5" ${sel('elevenlabs_model', 'eleven_flash_v2_5')}>Flash v2.5 — Ultra-fast</option>
+            </select>
+            <div class="hint">Turbo v2.5 is recommended for voice agents — lowest latency.</div>
+          </div>
+          <div class="form-group">
+            <label>Voice ID</label>
+            <input type="text" id="elevenlabs_voice_id" value="${(config.elevenlabs_voice_id || '21m00Tcm4TlvDq8ikWAM').replace(/"/g, '&quot;')}" placeholder="21m00Tcm4TlvDq8ikWAM">
+            <div class="hint">Find voice IDs at elevenlabs.io/voice-library. Default is Rachel.</div>
+          </div>
+        </div>
+        <div class="el-voice-presets">
+          <div class="hint" style="margin-bottom:8px;">Popular voice IDs (click to copy):</div>
+          <div class="el-preset-grid">
+            <button class="el-preset-btn" data-id="21m00Tcm4TlvDq8ikWAM">Rachel — Calm Female</button>
+            <button class="el-preset-btn" data-id="AZnzlk1XvdvUeBnXmlld">Domi — Strong Female</button>
+            <button class="el-preset-btn" data-id="EXAVITQu4vr4xnSDxMaL">Bella — Warm Female</button>
+            <button class="el-preset-btn" data-id="ErXwobaYiN019PkySvjV">Antoni — Professional Male</button>
+            <button class="el-preset-btn" data-id="VR6AewLTigWG4xSOukaG">Arnold — Deep Male</button>
+            <button class="el-preset-btn" data-id="pNInz6obpgDQGcFmaJgB">Adam — Neutral Male</button>
+            <button class="el-preset-btn" data-id="yoZ06aMxZJJ28mfd3POQ">Sam — Casual Male</button>
+            <button class="el-preset-btn" data-id="jBpfuIE2acCO8z3wKNLl">Freya — Upbeat Female</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="chatterbox-panel" style="${config.tts_provider === 'chatterbox' ? '' : 'display:none'}">
       <div class="section-card">
         <div class="section-title">Chatterbox Settings</div>
         <div class="form-row" style="max-width:720px;">
@@ -162,6 +198,7 @@ export function renderCredentials(config) {
       <div class="section-title">AI Providers</div>
       <div class="form-row">
         <div class="form-group"><label>OpenAI API Key</label><input type="password" id="openai_api_key" value="${v('openai_api_key')}"></div>
+        <div class="form-group"><label>ElevenLabs API Key</label><input type="password" id="elevenlabs_api_key" value="${v('elevenlabs_api_key')}"><div class="hint">Required when TTS provider is set to ElevenLabs. Get from elevenlabs.io/api.</div></div>
         <div class="form-group"><label>Sarvam API Key (STT)</label><input type="password" id="sarvam_api_key" value="${v('sarvam_api_key')}"><div class="hint">Used for Indian-language speech recognition (STT). Required unless using Deepgram.</div></div>
         <div class="form-group"><label>Chatterbox Server URL (TTS)</label><input type="text" id="cred_chatterbox_server_url" value="${v('chatterbox_server_url') || 'http://localhost:8000'}"><div class="hint">Your self-hosted Chatterbox GPU server. Only needed if TTS provider is set to Chatterbox.</div></div>
       </div>
@@ -199,15 +236,21 @@ export function initAgentSettings() {
 export function initModels() {
   window._onTTSProviderChange = (val) => {
     const sarvamPanel = document.getElementById('sarvam-voice-panel');
+    const elPanel = document.getElementById('elevenlabs-panel');
     const cbPanel = document.getElementById('chatterbox-panel');
-    if (val === 'chatterbox') {
-      if (sarvamPanel) sarvamPanel.style.display = 'none';
-      if (cbPanel) cbPanel.style.display = '';
-    } else {
-      if (sarvamPanel) sarvamPanel.style.display = '';
-      if (cbPanel) cbPanel.style.display = 'none';
-    }
+    if (sarvamPanel) sarvamPanel.style.display = val === 'sarvam' ? '' : 'none';
+    if (elPanel) elPanel.style.display = val === 'elevenlabs' ? '' : 'none';
+    if (cbPanel) cbPanel.style.display = val === 'chatterbox' ? '' : 'none';
   };
+
+  document.querySelectorAll('.el-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const voiceInput = document.getElementById('elevenlabs_voice_id');
+      if (voiceInput) voiceInput.value = btn.dataset.id;
+      document.querySelectorAll('.el-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
 
   document.getElementById('save-models')?.addEventListener('click', async () => {
     const ttsProvider = document.getElementById('tts_provider')?.value || 'sarvam';
@@ -216,6 +259,8 @@ export function initModels() {
       tts_provider: ttsProvider,
       tts_voice: document.getElementById('tts_voice')?.value || 'kavya',
       tts_language: document.getElementById('tts_language')?.value || 'hi-IN',
+      elevenlabs_model: document.getElementById('elevenlabs_model')?.value || 'eleven_turbo_v2_5',
+      elevenlabs_voice_id: document.getElementById('elevenlabs_voice_id')?.value || '21m00Tcm4TlvDq8ikWAM',
       chatterbox_server_url: document.getElementById('chatterbox_server_url')?.value || 'http://localhost:8000',
       chatterbox_voice: document.getElementById('chatterbox_voice')?.value || 'default',
       chatterbox_exaggeration: parseFloat(document.getElementById('chatterbox_exaggeration')?.value || '0.5'),
@@ -235,7 +280,9 @@ export function initCredentials() {
     const payload = {
       livekit_url: get('livekit_url'), sip_trunk_id: get('sip_trunk_id'),
       livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
-      openai_api_key: get('openai_api_key'), sarvam_api_key: get('sarvam_api_key'),
+      openai_api_key: get('openai_api_key'),
+      elevenlabs_api_key: get('elevenlabs_api_key'),
+      sarvam_api_key: get('sarvam_api_key'),
       chatterbox_server_url: get('cred_chatterbox_server_url'),
       cal_api_key: get('cal_api_key'), cal_event_type_id: get('cal_event_type_id'),
       telegram_bot_token: get('telegram_bot_token'), telegram_chat_id: get('telegram_chat_id'),
