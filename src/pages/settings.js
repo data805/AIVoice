@@ -206,7 +206,12 @@ export function renderCredentials(config) {
           <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret" value="${v('livekit_api_secret')}"></div>
         </div>
         <div style="margin-top:4px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em;">SIP Trunks</div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em;">Phone Number &amp; SIP Trunks</div>
+          <div class="form-group">
+            <label>Agent Phone Number</label>
+            <input type="text" id="agent_phone_number" value="${v('agent_phone_number')}" placeholder="+91XXXXXXXXXX">
+            <div class="hint">The phone number assigned to this agent. Used as caller ID for outbound calls and as the inbound destination. Example: +919876543210</div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Inbound SIP Trunk ID</label>
@@ -328,6 +333,7 @@ export function initCredentials() {
       phone_provider: get('phone_provider') || 'livekit',
       livekit_url: get('livekit_url'),
       livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
+      agent_phone_number: get('agent_phone_number'),
       sip_trunk_id_inbound: get('sip_trunk_id_inbound'), sip_trunk_id_outbound: get('sip_trunk_id_outbound'),
       twilio_account_sid: get('twilio_account_sid'),
       twilio_auth_token: get('twilio_auth_token'),

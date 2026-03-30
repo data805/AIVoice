@@ -87,7 +87,7 @@ export async function fetchCampaignDetail(campaignId) {
   return { campaign, results: results || [] };
 }
 
-export async function createCampaign({ name, numbers, firstLine, instructions }) {
+export async function createCampaign({ name, numbers, firstLine, instructions, agentPhoneNumber }) {
   const phoneNumbers = numbers
     .split('\n')
     .map(n => n.trim())
@@ -103,6 +103,7 @@ export async function createCampaign({ name, numbers, firstLine, instructions })
       total_numbers: phoneNumbers.length,
       custom_first_line: firstLine || '',
       custom_instructions: instructions || '',
+      agent_phone_number: agentPhoneNumber || '',
     })
     .select()
     .single();
@@ -111,11 +112,40 @@ export async function createCampaign({ name, numbers, firstLine, instructions })
   const callResults = phoneNumbers.map(phone => ({
     campaign_id: campaign.id,
     phone_number: phone,
+    caller_id: agentPhoneNumber || '',
     status: 'pending',
   }));
   await supabase.from('outbound_call_results').insert(callResults);
 
   return campaign;
+}
+
+export async function dispatchCampaignCall(campaignId, resultId, toPhone, agentPhoneNumber, sipTrunkId) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/dispatch-outbound-call`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session?.access_token || anonKey}`,
+      'Apikey': anonKey,
+    },
+    body: JSON.stringify({
+      campaign_id: campaignId,
+      result_id: resultId,
+      to_phone: toPhone,
+      from_phone: agentPhoneNumber,
+      sip_trunk_id: sipTrunkId,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Dispatch failed');
+  }
+  return res.json();
 }
 
 export async function fetchActiveCalls() {
