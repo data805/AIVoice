@@ -186,12 +186,38 @@ export function renderCredentials(config) {
       <div class="page-sub">Credentials saved here are stored in config.json and used by the Python agent.</div>
     </div>
     <div class="section-card">
-      <div class="section-title">LiveKit</div>
-      <div class="form-row">
-        <div class="form-group"><label>LiveKit URL</label><input type="text" id="livekit_url" value="${v('livekit_url')}"></div>
-        <div class="form-group"><label>SIP Trunk ID</label><input type="text" id="sip_trunk_id" value="${v('sip_trunk_id')}"></div>
-        <div class="form-group"><label>API Key</label><input type="password" id="livekit_api_key" value="${v('livekit_api_key')}"></div>
-        <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret" value="${v('livekit_api_secret')}"></div>
+      <div class="section-title">Phone Provider</div>
+      <div class="form-group" style="max-width:320px;">
+        <label>Telephony Provider</label>
+        <select id="phone_provider" onchange="window._onPhoneProviderChange(this.value)">
+          <option value="livekit" ${(config.phone_provider || 'livekit') === 'livekit' ? 'selected' : ''}>LiveKit SIP — Native integration</option>
+          <option value="twilio" ${config.phone_provider === 'twilio' ? 'selected' : ''}>Twilio — Global PSTN coverage</option>
+        </select>
+        <div class="hint">LiveKit SIP uses your existing SIP trunk. Twilio provides phone numbers in 100+ countries.</div>
+      </div>
+    </div>
+
+    <div id="livekit-cred-panel" style="${config.phone_provider === 'twilio' ? 'display:none' : ''}">
+      <div class="section-card">
+        <div class="section-title">LiveKit</div>
+        <div class="form-row">
+          <div class="form-group"><label>LiveKit URL</label><input type="text" id="livekit_url" value="${v('livekit_url')}"></div>
+          <div class="form-group"><label>SIP Trunk ID</label><input type="text" id="sip_trunk_id" value="${v('sip_trunk_id')}"></div>
+          <div class="form-group"><label>API Key</label><input type="password" id="livekit_api_key" value="${v('livekit_api_key')}"></div>
+          <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret" value="${v('livekit_api_secret')}"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="twilio-cred-panel" style="${config.phone_provider === 'twilio' ? '' : 'display:none'}">
+      <div class="section-card">
+        <div class="section-title">Twilio</div>
+        <div class="form-row">
+          <div class="form-group"><label>Account SID</label><input type="text" id="twilio_account_sid" value="${v('twilio_account_sid')}" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"><div class="hint">Find at console.twilio.com — Dashboard.</div></div>
+          <div class="form-group"><label>Auth Token</label><input type="password" id="twilio_auth_token" value="${v('twilio_auth_token')}" placeholder="Your Twilio auth token"><div class="hint">Keep secret. Never share this value.</div></div>
+          <div class="form-group"><label>Twilio Phone Number</label><input type="text" id="twilio_phone_number" value="${v('twilio_phone_number')}" placeholder="+1XXXXXXXXXX"><div class="hint">Your Twilio inbound/outbound number with country code.</div></div>
+          <div class="form-group"><label>Twilio Webhook Base URL</label><input type="text" id="twilio_webhook_url" value="${v('twilio_webhook_url')}" placeholder="https://your-server.com"><div class="hint">Your agent server URL. Twilio calls this for voice webhooks.</div></div>
+        </div>
       </div>
     </div>
     <div class="section-card">
@@ -275,11 +301,23 @@ export function initModels() {
 }
 
 export function initCredentials() {
+  window._onPhoneProviderChange = (val) => {
+    const lkPanel = document.getElementById('livekit-cred-panel');
+    const twPanel = document.getElementById('twilio-cred-panel');
+    if (lkPanel) lkPanel.style.display = val === 'livekit' ? '' : 'none';
+    if (twPanel) twPanel.style.display = val === 'twilio' ? '' : 'none';
+  };
+
   document.getElementById('save-credentials')?.addEventListener('click', async () => {
     const get = (id) => document.getElementById(id)?.value || '';
     const payload = {
+      phone_provider: get('phone_provider') || 'livekit',
       livekit_url: get('livekit_url'), sip_trunk_id: get('sip_trunk_id'),
       livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
+      twilio_account_sid: get('twilio_account_sid'),
+      twilio_auth_token: get('twilio_auth_token'),
+      twilio_phone_number: get('twilio_phone_number'),
+      twilio_webhook_url: get('twilio_webhook_url'),
       openai_api_key: get('openai_api_key'),
       elevenlabs_api_key: get('elevenlabs_api_key'),
       sarvam_api_key: get('sarvam_api_key'),
